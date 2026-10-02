@@ -1,0 +1,9 @@
+.gradle/
+android/.gradle/
+android/local.properties
+android/app/build/
+*.keystore
+*.jks
+*.pem
+__pycache__/
+tests/world.json
