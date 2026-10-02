@@ -1,5 +1,5 @@
 """Install/launch the Gradle APK on Android and test actual touch-to-game input."""
-import subprocess,time,json,urllib.request,re,os
+import subprocess,time,json,urllib.request,re,os,sys,traceback
 from pathlib import Path
 import websocket
 out=Path('android-evidence');out.mkdir(exist_ok=True)
@@ -13,6 +13,7 @@ adb('uninstall','com.nightshift.game',check=False)
 result=adb('install','-r','android/app/build/outputs/apk/debug/app-debug.apk')
 assert 'Success' in result,result
 (out/'new-apk-install.txt').write_text(result)
+adb('shell','settings','put','secure','immersive_mode_confirmations','confirmed')
 adb('logcat','-c');adb('shell','am','start','-W','-n','com.nightshift.game/.MainActivity')
 ws=None
 for _ in range(40):
@@ -43,6 +44,15 @@ def screenshot(name):
 def tap(selector):
  r=evaluate('(()=>{const r=document.querySelector('+json.dumps(selector)+').getBoundingClientRect();return {x:(r.x+r.width/2)*devicePixelRatio,y:(r.y+r.height/2)*devicePixelRatio}})()')
  adb('shell','input','tap',str(round(r['x'])),str(round(r['y'])))
+ time.sleep(.5)
+def on_error(kind,value,tb):
+ try:
+  screenshot('failure.png')
+  (out/'logcat.txt').write_text(adb('logcat','-d'))
+  (out/'failure-state.json').write_text(json.dumps(evaluate('({mode:game.mode,flashlight:game.player.flashlight,overlay:game.ui.overlay,dpr:devicePixelRatio,width:innerWidth,height:innerHeight})')))
+ except Exception:pass
+ traceback.print_exception(kind,value,tb)
+sys.excepthook=on_error
 screenshot('menu.png');tap('#menuButtons .primary');time.sleep(3)
 assert evaluate('game.mode')=='playing','Actual New Turn button did not start'
 before=evaluate('({x:game.player.x,z:game.player.z})')
