@@ -2,23 +2,60 @@ name: Build Night Shift APK
 on:
   workflow_dispatch:
   push:
-    paths: ['android/**', '.github/workflows/android.yml']
+    paths: ['android/**', 'tests/android_smoke.py', '.github/workflows/android.yml']
+permissions:
+  contents: write
 jobs:
   apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '17'}
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.9'}
-      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Compile standard Android debug APK
         working-directory: android
         run: gradle --no-daemon :app:assembleDebug
+      - name: Verify with Android build tools
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose android/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -v 4 android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          python3 -m pip install websocket-client
+      - name: Install and test real Android touchscreen flow
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: python3 tests/android_smoke.py
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Night-Shift-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android-evidence/
           retention-days: 30
+      - name: Replace rejected APK with verified Gradle build
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/Night-Shift-Android.apk
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist/Night-Shift-Android.apk
+          if ! git diff --cached --quiet; then
+            git commit -m 'Replace APK with Gradle build tested on Android 15'
+            git push origin HEAD:main
+          fi

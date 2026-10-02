@@ -11,6 +11,7 @@ public final class MainActivity extends Activity {
     private WebView web;
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        WebView.setWebContentsDebuggingEnabled((getApplicationInfo().flags & 2) != 0);
         web = new WebView(this);
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
