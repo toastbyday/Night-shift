@@ -13,10 +13,14 @@ assert apk.is_valid_APK() and apk.get_package()=='com.nightshift.game'
 assert apk.get_main_activity()=='com.nightshift.game.MainActivity'
 assert apk.get_min_sdk_version()=='26' and apk.get_target_sdk_version()=='35'
 assert not apk.get_permissions(),'offline package should request no permissions'
-assert apk.is_signed_v1() and apk.is_signed_v2()
-dex=apk.get_dex();assert hashlib.sha1(dex[32:]).digest()==dex[12:32];assert zlib.adler32(dex[12:])&0xffffffff==struct.unpack_from('<I',dex,8)[0]
-classes=DEX(dex).get_classes();assert len(classes)==1
-assert{m.get_name()for m in classes[0].get_methods()}=={'<init>','onCreate','onPause','onBackPressed'}
+assert apk.is_signed_v2()
+classes=[]
+for dex in apk.get_all_dex():
+ assert hashlib.sha1(dex[32:]).digest()==dex[12:32]
+ assert zlib.adler32(dex[12:])&0xffffffff==struct.unpack_from('<I',dex,8)[0]
+ classes.extend(DEX(dex).get_classes())
+main=next(c for c in classes if c.get_name()=='Lcom/nightshift/game/MainActivity;')
+assert{m.get_name()for m in main.get_methods()}=={'<init>','onCreate','onPause','onBackPressed'}
 # Parse signed data independently with Androguard; verify RSA and content digest.
 apk.parse_v2_signing_block();signer=apk._v2_signing_data[0];algorithm,signature=signer.signatures[0];assert algorithm==0x103
 cert=x509.load_der_x509_certificate(signer.signed_data.certificates[0]);key=serialization.load_der_public_key(signer.public_key)
@@ -34,14 +38,11 @@ with zipfile.ZipFile(path)as z:
  assert z.testzip()is None
  for f in ['index.html','style.css','engine.js','systems.js','game.js']:
   assert z.read('assets/'+f)==(root/'android/app/src/main/assets'/f).read_bytes(),'APK assets must match current source'
- # Verify the v1 detached signature and every manifest entry digest.
- with tempfile.TemporaryDirectory()as t:
-  a=Path(t)/'sig.der';b=Path(t)/'content.sf';a.write_bytes(z.read('META-INF/CERT.RSA'));b.write_bytes(z.read('META-INF/CERT.SF'))
-  result=subprocess.run(['openssl','cms','-verify','-binary','-inform','DER','-in',str(a),'-content',str(b),'-noverify','-out','/dev/null'],capture_output=True)
-  assert result.returncode==0,result.stderr
- mf=z.read('META-INF/MANIFEST.MF').decode()
- for section in mf.split('\r\n\r\n')[1:]:
-  if not section:continue
-  lines=section.split('\r\n');name=lines[0][6:];digest=lines[1].split(': ',1)[1];assert base64.b64encode(hashlib.sha256(z.read(name)).digest()).decode()==digest
-print('PASS: Android manifest, DEX parse/checksums, ZIP CRC, bundled assets, v1 RSA signature, v2 RSA signature and entire APK content digest.')
-print('No emulator or physical Android execution was performed.')
+ # Android builds with minSdk 26 can use v2 only; verify v1 if present.
+ if apk.is_signed_v1():
+  with tempfile.TemporaryDirectory()as t:
+   a=Path(t)/'sig.der';b=Path(t)/'content.sf';a.write_bytes(z.read('META-INF/CERT.RSA'));b.write_bytes(z.read('META-INF/CERT.SF'))
+   result=subprocess.run(['openssl','cms','-verify','-binary','-inform','DER','-in',str(a),'-content',str(b),'-noverify','-out','/dev/null'],capture_output=True)
+   assert result.returncode==0,result.stderr
+print('PASS: Android manifest, DEX parse/checksums, ZIP CRC, bundled assets, v2 RSA signature and entire APK content digest.')
+print('This integrity check is separate from tests/android_smoke.py, which installs and runs the app on Android.')

@@ -1,0 +1,16 @@
+{
+  "installed": true,
+  "menu": true,
+  "newTurnTouch": true,
+  "joystickTouch": true,
+  "flashlightTouch": true,
+  "phoneTouch": true,
+  "paused": true,
+  "state": {
+    "mode": "paused",
+    "clock": "00:04",
+    "webgl": true,
+    "drawCalls": 20,
+    "save": true
+  }
+}

@@ -20,17 +20,18 @@ abra **Actions → Build Night Shift APK → Run workflow**; depois baixe o arti
 
 ## Entregas
 
-- **Night-Shift-Android.apk**: build de desenvolvimento assinado v1 + v2, Android
+- **Night-Shift-Android.apk**: build de desenvolvimento compilado por Gradle e assinado pelo SDK, Android
   8.0/API 26 ou superior, alvo API 35. APK universal Java, compatível com ARM64.
 - **Night-Shift.html**: a mesma versão empacotada em um HTML offline único para
   abrir em um navegador com WebGL; em celulares, gire para landscape.
 - **Night-Shift-Projeto.zip**: código do jogo, projeto Android, pipeline GitHub
   Actions e testes. Os arquivos de assinatura privados não são incluídos.
 
-**Limite de validação:** estrutura, assinaturas e integridade do APK foram verificadas
-independentemente. Não foi instalado em emulador ou celular físico. O objetivo de
-30/60 FPS precisa ser medido em aparelhos reais. A versão ainda precisa de testes
-reais de touchscreen, áudio e ciclo de vida do WebView antes de uma publicação.
+**Validação Android:** a compilação padrão é verificada com `apksigner` e
+`zipalign` e testada em um emulador Android 15 antes de substituir o APK em `dist/`.
+O teste cobre instalação, abertura, início por toque, joystick, lanterna, celular,
+pausa e save. Não houve teste em celular físico; desempenho e áudio ainda precisam
+ser medidos em aparelhos reais. As evidências ficam no artifact do GitHub Actions.
 
 ## Jogar
 
@@ -135,11 +136,12 @@ O workflow `.github/workflows/android.yml` faz a mesma compilação e fornece o
 artifact Night-Shift-APK quando o projeto é enviado a um repositório GitHub e o
 workflow é executado. Repositório: https://github.com/toastbyday/Night-shift.
 
-A build padrão **não foi executada** aqui: o SDK Android não estava disponível.
-O APK entregue foi gerado por `tools/offline_apk.py`, um empacotador específico
-para o pequeno host desta versão. Ele não compila Java arbitrário: gera DEX do
-host conhecido, manifesto binário e assinaturas usando Python + cryptography.
-Se mudar MainActivity.java, use a build Gradle padrão ou atualize o empacotador.
+A build padrão foi executada no GitHub Actions. O APK anterior, produzido pelo
+empacotador sem SDK, foi rejeitado pelo Android por um manifesto malformado:
+`INSTALL_PARSE_FAILED_MANIFEST_MALFORMED`, com `android:exported` não reconhecido
+como explicitamente declarado. A nova versão utiliza o manifesto e o DEX gerados
+pelas ferramentas oficiais do Android. `tools/offline_apk.py` foi desativado para
+impedir a geração de outro pacote pelo método antigo.
 
 O APK possui assinatura de desenvolvimento. Para uma publicação, utilize sua
 própria chave de assinatura e a build padrão. Builds com certificados diferentes
@@ -156,13 +158,15 @@ python3 tests/apk.verify.py
 Dependências de teste Python: `numpy`, `Pillow`, `moderngl`, `androguard`, `cryptography`.
 O jogo e o aplicativo não utilizam essas dependências.
 
-Os testes simulam um turno completo de 12 minutos e verificam colisões, portas,
+Os testes de lógica simulam um turno completo de 12 minutos e verificam colisões, portas,
 entrada de toque, tarefas, transporte, relatórios, energia, dificuldade, esconderijo,
 captura, retomada, pausa, recompensas e impossibilidade de pagamento duplicado.
 Também verificam que os objetos essenciais podem ser mirados de posições livres.
-Isso não equivale a testar os gestos reais num aparelho.
+Esse teste de lógica não equivale a testar gestos; o teste Android complementar
+envia toques e arrastos reais ao emulador.
 
 A captura de cenário foi renderizada via EGL/llvmpipe com a geometria e o shader
 reais. Não é uma captura do aplicativo no Android. O teste do APK valida manifesto,
-DEX, CRC do ZIP, os assets correspondentes ao código, assinaturas v1 e v2 e o digest
-do pacote inteiro. Não comprova execução no Android.
+DEX, CRC do ZIP, os assets correspondentes ao código, a assinatura v2 e o digest
+do pacote inteiro. A execução no Android é verificada separadamente por `tests/android_smoke.py`,
+que instala a build Gradle no emulador e envia gestos reais por ADB.
